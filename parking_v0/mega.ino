@@ -32,9 +32,10 @@ int S1 = 0, S2 = 0, S3 = 0, S4 = 0, S5 = 0, S6 = 0;
 int totalSlot = S1 + S2 + S3 + S4 + S5 + S6;
 int slot = 6 - totalSlot;
 
-// Trạng thái cảm biến
-int enterStat = 0, exitStat = 0;
+// // Trạng thái cảm biến
+// int exitStat = 0;
 int isCardVao = 0;
+// int enterStat = 0;
 
 // Biến để kiểm tra thời gian giữa các lần quét cảm biến
 unsigned long lastCheck = 0;
@@ -57,24 +58,19 @@ void Read_Sensor() {
     slot = 6 - totalSlot;
 }
 
-void setExitStat() {
-  char *arg;
-  arg = sCmd.next();
-  if (arg != NULL) {  // Kiểm tra xem chuỗi có tồn tại không
-        char *endptr;  // Con trỏ để lưu vị trí sau khi chuyển đổi
-        int value = strtol(arg, &endptr, 10);  // Chuyển đổi chuỗi thành số nguyên hệ 10
-        if (*endptr == '\0') {  // Kiểm tra xem có lỗi trong quá trình chuyển đổi không
-            exitStat = (value == 1) ? 1 : 0;
-        } else {
-            Serial.println("Error: Invalid number");
-        }
-  }
-}
-
-void plusslot() {
-  if (exitStat == 1) slot += 1;
-  if (slot < 0) slot = 0;
-}
+// void setExitStat() {
+//   char *arg;
+//   arg = sCmd.next();
+//   if (arg != NULL) {  // Kiểm tra xem chuỗi có tồn tại không
+//         char *endptr;  // Con trỏ để lưu vị trí sau khi chuyển đổi
+//         int value = strtol(arg, &endptr, 10);  // Chuyển đổi chuỗi thành số nguyên hệ 10
+//         if (*endptr == '\0') {  // Kiểm tra xem có lỗi trong quá trình chuyển đổi không
+//             exitStat = (value == 1) ? 1 : 0;
+//         } else {
+//             Serial.println("Error: Invalid number");
+//         }
+//   }
+// }
 
 // Hàm mở cửa
 void opengate() {
@@ -96,13 +92,9 @@ void setup() {
     Serial.begin(9600);
     SPI.begin();         // Init SPI bus
     mfrc522.PCD_Init();  // Init MFRC522
-    Serial.println("Hello");
+    Serial.println("Hello1");
 
-    pinMode(irEnter, INPUT);
-
-    sCmd.addCommand("SLOTPLUS", plusslot);
-
-    servovao.attach(3);  // Servo điều khiển cổng vào
+    servovao.attach(9);  // Servo điều khiển cổng vào
     servovao.write(0);   // Servo ban đầu ở vị trí đóng
 
     lcd.init();          // Khởi tạo màn hình LCD
@@ -122,7 +114,6 @@ boolean getID() {
     if (!mfrc522.PICC_IsNewCardPresent()) {
         return false;
     }
-
     // Đọc UID của thẻ nếu có
     if (!mfrc522.PICC_ReadCardSerial()) {
         return false;
@@ -152,7 +143,6 @@ void readCard() {
             if (tagID == card[i]) {
                 Serial.print("Card detected, UID: ");
                 Serial.println(tagID);
-                slot -= 1;
                 isCardVao = 1;
                 cardFound = true;
                 break;
@@ -165,31 +155,18 @@ void readCard() {
     }
   }
 }
-bool gateOpened = false;
+
 void loop() {
     if (millis() - lastCheck >= interval) { 
         lastCheck = millis(); 
-        sCmd.readSerial();
-        Read_Sensor();      // Cập nhật trạng thái cảm biến
+        Read_Sensor();  // Cập nhật trạng thái cảm biến
 
-        // Kiểm tra trạng thái cảm biến hồng ngoại
-        if (digitalRead(irEnter) == 1) {
-            Serial.println("ENTER 1");
-            enterStat = 1;
-        } else {
-            Serial.println("ENTER 0");
-            enterStat = 0;
+        // Điều kiện mở cửa
+        if ((slot > 0) && (isCardVao == 1)) {
+            opengate();
         }
 
-        if ((isCardVao == 1) && (exitStat == 0) && (enterStat == 1)) {
-          gateOpened = true;
-          opengate();
-        }
-
-        if (exitStat == 0) {
-          gateOpened = false;  // Cho phép mở cửa lại khi cần
-        }
-
+        // Cập nhật số lượng slot còn trống trên màn hình
         static int lastSlot = -1;
         if (slot != lastSlot) {
             lcd.setCursor(0, 0);
@@ -199,6 +176,7 @@ void loop() {
             lastSlot = slot;
         }
 
+        // Nếu bãi xe đã đầy
         if ((slot != lastSlot) && (slot == 0)) {
             lcd.setCursor(2, 0);
             lcd.print("Bãi xe đã đầy");
@@ -214,6 +192,7 @@ void loop() {
         updateLCD(6, S6, 10, 3);
     }
 }
+
 
 unsigned long getUID(){
   if (!mfrc522.PICC_IsNewCardPresent()) {  // Kiểm tra có thẻ mới không
@@ -242,6 +221,12 @@ void updateLCD(int slotNum, int sensorVal, int col, int row) {
 
     if (slotNum < 1 || slotNum > 6) {
         return;
+    }
+
+    if (sensorVal != lastState[slotNum - 1]) {
+        lcd.setCursor(col, row);
+        lcd.print("S" + String(slotNum) + ": Lỗi");
+        lastState[slotNum - 1] = -1;
     }
 
     if (sensorVal != lastState[slotNum - 1]) {
