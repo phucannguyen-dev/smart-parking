@@ -1,90 +1,89 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Servo.h>
+#include <Wire.h>
 #include <SerialCommand.h>
+
 
 #define RST_PIN 5  // Đổi chân RST để tránh xung đột
 #define SS_PIN  10 
 
-MFRC522 mfrc522(SS_PIN, RST_PIN);
-String card[13] = {"2ADBF93D", "B18BFC3D", "44DCF93D", "9C93F93D", "D3F4F93D", "EFF2FB3D", "CFF2FB3D", "508CFC3D", "3322FC3D", "135D6A19", "13FD7CE2", "23837DE4", "A965FC3D"};
+MFRC522 mfrc522(SS_PIN, RST_PIN);  // Đối tượng điều khiển module RFID
+String card[13] = {"2ADBF93D", "B18BFC3D", "44DCF93D", "9C93F93D", "D3F4F93D", 
+                   "EFF2FB3D", "CFF2FB3D", "508CFC3D", "3322FC3D", "135D6A19", 
+                   "13FD7CE2", "23837DE4", "A965FC3D"};
 String tagID = "";
 
-Servo servora;
+Servo servora;  // Servo để mở cửa
+
+int exitStat = 0;
+int enterStat = 0;
 
 SerialCommand sCmd;
 
-#define irExit 2
-
 void setup() {
-    Serial.begin(19200);  // Initialize serial communications with the PC
-    while (!Serial);     // Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
-    SPI.begin();         // Init SPI bus
-    mfrc522.PCD_Init();  // Init MFRC522
-    servora.attach(3);  // Gán chân servo không trùng với RST_PIN
-    servora.write(0);
-    Serial.println("Hello");
-    sCmd.addCommand("SERVO", servo_open);
+    Serial.begin(9600);  // Khởi tạo giao tiếp Serial
+    
+    SPI.begin();  // Khởi tạo giao tiếp SPI
+    mfrc522.PCD_Init();  // Khởi tạo module RFID
+
+    servora.attach(9);  // Gán servo vào chân số 3
+    servora.write(0);   // Đưa servo về vị trí 0 độ (đóng cửa)
+
+    Serial.println("Hello2");  // In ra thông báo khởi động thành công
 }
 
 void loop() {
     sCmd.readSerial();
     if (getID()) {
         bool cardFound = false;
-        unsigned long uid = getID();
         for (int i = 0; i < 13; i++) {
             if (tagID == card[i]) {
-                Serial.print("Card detected, UID: "); Serial.println(uid);
-                Serial.println("CARD2 1");
-                cardFound = true;           // Xác định thẻ đã tìm thấy
-                break;                      // Thoát khỏi vòng lặp
+                Serial.print("Card detected, UID: ");
+                Serial.println(tagID);
+                opengate();
+                cardFound = true;
+                break;
             }
         }
-        if (!cardFound) {  // Nếu thẻ không được tìm thấy
+
+        if (!cardFound) {  // Nếu không tìm thấy thẻ hợp lệ
             Serial.println("No card found");
-            Serial.println("CARD2 0");
+            delay(100);
         }
-        if (digitalRead(irEnter) == 1) {
-          Serial.println("EXIT 1");
-        } else if (digitalRead(irEnter) == 0) {
-          Serial.println("EXIT 0");
-    }
     }
 }
 
+// Hàm mở cửa
+void opengate() {
+    servora.write(90);  // Xoay servo 90 độ (mở cửa)
+    delay(2000);         // Giữ cửa mở trong 2 giây
+    servora.write(0);   // Đóng cửa lại
+}
+
+
+// Hàm đọc và lưu UID của thẻ RFID
 boolean getID() {
-    if (!mfrc522.PICC_IsNewCardPresent()) {  // If a new PICC placed to RFID reader continue
+    // Kiểm tra xem có thẻ mới không
+    if (!mfrc522.PICC_IsNewCardPresent()) {
         return false;
     }
-    if (!mfrc522.PICC_ReadCardSerial()) {  // Since a PICC placed get Serial and continue
+
+    // Đọc UID của thẻ nếu có
+    if (!mfrc522.PICC_ReadCardSerial()) {
         return false;
     }
-    tagID = "";
+
+    // Tạo một mảng char để lưu UID dạng chuỗi
+    char uidStr[9];  // Mỗi byte của UID có 2 ký tự hex, 4 bytes -> 8 ký tự + null terminator
     for (uint8_t i = 0; i < 4; i++) {
-        tagID.concat(String(mfrc522.uid.uidByte[i], HEX));  // Adds the 4 bytes in a single String variable
+        sprintf(&uidStr[i * 2], "%02X", mfrc522.uid.uidByte[i]);  // Lưu từng byte UID vào chuỗi dạng HEX
     }
-    tagID.toUpperCase();
-    mfrc522.PICC_HaltA();  // Stop reading
+    tagID = String(uidStr);  // Chuyển thành String để sử dụng
+
+    tagID.toUpperCase();  // Đưa chuỗi thành chữ hoa
+
+    mfrc522.PICC_HaltA();  // Dừng việc đọc thẻ
+
     return true;
-}
-
-unsigned long getUID(){
-  if (!mfrc522.PICC_IsNewCardPresent()) {  // Kiểm tra có thẻ mới không
-    return 0;
-  }
-  
-  if (!mfrc522.PICC_ReadCardSerial()) {  // Đọc thông tin thẻ
-    return 0;
-  }
-  
-  unsigned long hex_num = 0;
-  
-  // Nếu UID là 4 byte thì xử lý theo kiểu này
-  hex_num =  mfrc522.uid.uidByte[0] << 24;
-  hex_num += mfrc522.uid.uidByte[1] << 16;
-  hex_num += mfrc522.uid.uidByte[2] <<  8;
-  hex_num += mfrc522.uid.uidByte[3];
-
-  mfrc522.PICC_HaltA();  // Dừng đọc thẻ
-  return hex_num;
 }
