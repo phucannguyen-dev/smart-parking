@@ -11,10 +11,10 @@ Servo servovao; // Servo điều khiển cổng vào
 // Cảm biến và chân I/O
 #define irCar1 30
 #define irCar2 31
-#define irCar3 33
-#define irCar4 35
-#define irCar5 32
-#define irCar6 34
+#define irCar3 32
+#define irCar4 33
+#define irCar5 34
+#define irCar6 35
 
 // RFID
 #define RST_PIN 5
@@ -50,17 +50,6 @@ void Read_Sensor() {
     slot = 6 - totalSlot;
 }
 
-// Hàm mở cửa
-void opengate() {
-    servovao.write(90);  // Xoay servo 90 độ (mở cửa)
-    delay(2000);         // Giữ cửa mở trong 2 giây
-    servovao.write(0);   // Đóng cửa lại
-}
-
-void closegate() {
-    servovao.write(0);   // Đóng cửa lại
-}
-
 // Cài đặt ban đầu
 void setup() {
     pinMode(irCar1, INPUT);
@@ -84,6 +73,17 @@ void setup() {
     lcd.clear();
 
     Read_Sensor();  // Đọc trạng thái cảm biến lần đầu tiên
+}
+
+// Hàm mở cửa
+void opengate() {
+    servovao.write(90);  // Xoay servo 90 độ (mở cửa)
+    delay(2000);         // Giữ cửa mở trong 2 giây
+    servovao.write(0);   // Đóng cửa lại
+}
+
+void closegate() {
+    servovao.write(0);   // Đóng cửa lại
 }
 
 // Hàm đọc và lưu UID của thẻ RFID

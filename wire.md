@@ -6,3 +6,4 @@
 **Lưu ý: ** 
 - Khi upload thì nối IO0 với GND với nhau
 - Sau khi upload thì gỡ ra 
+

@@ -2,8 +2,6 @@
 #include <MFRC522.h>
 #include <Servo.h>
 #include <Wire.h>
-#include <SerialCommand.h>
-
 
 #define RST_PIN 5  // Đổi chân RST để tránh xung đột
 #define SS_PIN  10 
@@ -19,8 +17,6 @@ Servo servora;  // Servo để mở cửa
 int exitStat = 0;
 int enterStat = 0;
 
-SerialCommand sCmd;
-
 void setup() {
     Serial.begin(9600);  // Khởi tạo giao tiếp Serial
     
@@ -34,7 +30,6 @@ void setup() {
 }
 
 void loop() {
-    sCmd.readSerial();
     if (getID()) {
         bool cardFound = false;
         for (int i = 0; i < 13; i++) {
