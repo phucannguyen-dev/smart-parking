@@ -64,7 +64,12 @@ void setup() {
     mfrc522.PCD_Init();  // Init MFRC522
     Serial.println("Hello1");
 
+    lcd.init();
+    lcd.backlight();
+
     servovao.attach(9);
+    servovao.write(9);
+    
     lcd.setCursor(5, 1);
     lcd.print("Bãi giữ xe");
     lcd.setCursor(4, 2);
@@ -140,6 +145,7 @@ void loop() {
     if (millis() - lastCheck >= interval) { 
         lastCheck = millis(); 
         Read_Sensor();  // Cập nhật trạng thái cảm biến
+        readCard();
 
         // Cập nhật số lượng slot còn trống trên màn hình
         static int lastSlot = -1;
@@ -170,40 +176,12 @@ void loop() {
     }
 }
 
-
-unsigned long getUID(){
-  if (!mfrc522.PICC_IsNewCardPresent()) {  // Kiểm tra có thẻ mới không
-    return 0;
-  }
-  
-  if (!mfrc522.PICC_ReadCardSerial()) {  // Đọc thông tin thẻ
-    return 0;
-  }
-  
-  unsigned long hex_num = 0;
-  
-  // Nếu UID là 4 byte thì xử lý theo kiểu này
-  hex_num =  mfrc522.uid.uidByte[0] << 24;
-  hex_num += mfrc522.uid.uidByte[1] << 16;
-  hex_num += mfrc522.uid.uidByte[2] <<  8;
-  hex_num += mfrc522.uid.uidByte[3];
-
-  mfrc522.PICC_HaltA();  // Dừng đọc thẻ
-  return hex_num;
-}
-
 // Cập nhật trạng thái slot trên LCD
 void updateLCD(int slotNum, int sensorVal, int col, int row) {
     static int lastState[6] = { -1, -1, -1, -1, -1, -1 };
 
     if (slotNum < 1 || slotNum > 6) {
         return;
-    }
-
-    if (sensorVal != lastState[slotNum - 1]) {
-        lcd.setCursor(col, row);
-        lcd.print("S" + String(slotNum) + ": Lỗi");
-        lastState[slotNum - 1] = -1;
     }
 
     if (sensorVal != lastState[slotNum - 1]) {
