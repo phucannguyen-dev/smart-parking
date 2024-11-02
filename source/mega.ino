@@ -1,4 +1,4 @@
-// Version 2. Copyright by Nguyen Phuc An, Hoang Tan Dat, Vu Xuan Hoa. 16:30 02/11/24
+// Version 2. Copyright by Nguyen Phuc An, Hoang Tan Dat, Vu Xuan Hoa. 17:10 02/11/24
 // Variables Refactor
 /*
 Booleans: isSomething
@@ -14,20 +14,33 @@ Functions: doSomething
 #include <LCDI2C_Multilingual.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include <EEPROM.h>
 
 // Declare
 Servo entranceServo; // Control entrance gate
 const int LCD_COLS = 20;
 const int LCD_ROWS = 4;
-const int SERVO_PIN = 9;
-const int SERVO_OPEN_ANGLE = 90;
-const int SERVO_CLOSE_ANGLE = 0;
-const int SERIAL_BAUD = 9600;
-const int TOTAL_SLOTS = 6;
-const int CARD_COUNT = 13;
 const int LCD_SLOT_STATUS_ROW = 0;
 const int LCD_FIRST_COL = 0;
 const int LCD_SECOND_COL = 10;
+
+const int SERVO_PIN = 9;
+const int SERVO_OPEN_ANGLE = 90;
+const int SERVO_CLOSE_ANGLE = 0;
+
+const int SERIAL_BAUD = 9600;
+
+const int TOTAL_SLOTS = 6;
+const int CARD_COUNT = 13;
+
+// EEPROM Configuration
+const int CARDS_START_ADDR = 0;  // Starting address for card storage
+const int CARD_LENGTH = 8;  // Length of each card ID (8 characters)
+const int MAX_CARDS = 50;  // Maximum number of cards
+const int ACTIVE_CARDS_ADDR = CARDS_START_ADDR + (MAX_CARDS * CARD_LENGTH);  // Address to store number of active cards
+// Global variables
+int activeCards = 0;  // Declare this globally
+
 LCDI2C_Vietnamese lcd(0x27, LCD_COLS, LCD_ROWS); // LCD display
 
 // Sensors
@@ -88,6 +101,7 @@ void setup() {
     pinMode(IR_CAR6, INPUT);
 
     Serial.begin(SERIAL_BAUD); // Begin Serial Monitor
+    doInitializeEEPROM();  // Initialize EEPROM
     SPI.begin();         // Init SPI bus
     mfrc522.PCD_Init();  // Init MFRC522
     // Check if RFID is responding
@@ -198,27 +212,107 @@ void doReadCard() {
 }
 
 /**
- * Delete a card ID from the array
- * Returns true if card was found and deleted, false otherwise
+ * Initialize EEPROM and load saved cards
+ */
+void doInitializeEEPROM() {
+    // Read number of active cards
+    activeCards = EEPROM.read(ACTIVE_CARDS_ADDR);
+    if (activeCards > MAX_CARDS) activeCards = 0;  // Safety check
+    
+    // Load cards from EEPROM
+    for (int i = 0; i < activeCards; i++) {
+        card[i] = doReadCardFromEEPROM(i);
+    }
+    
+    Serial.print("Loaded cards: ");
+    Serial.println(activeCards);
+}
+
+/**
+ * Read a card ID from EEPROM at specific index
+ */
+String doReadCardFromEEPROM(int index) {
+    String cardID = "";
+    int addr = CARDS_START_ADDR + (index * CARD_LENGTH);
+    
+    for (int i = 0; i < CARD_LENGTH; i++) {
+        char c = EEPROM.read(addr + i);
+        if (c != 0) cardID += c;
+    }
+    
+    return cardID;
+}
+
+/**
+ * Write a card ID to EEPROM at specific index
+ */
+void doWriteCardToEEPROM(int index, String cardID) {
+    int addr = CARDS_START_ADDR + (index * CARD_LENGTH);
+    
+    // Write card ID
+    for (int i = 0; i < CARD_LENGTH; i++) {
+        if (i < cardID.length()) {
+            EEPROM.update(addr + i, cardID[i]);  // Using update instead of write to reduce wear
+        } else {
+            EEPROM.update(addr + i, 0);
+        }
+    }
+    
+    // Update active cards count
+    EEPROM.update(ACTIVE_CARDS_ADDR, activeCards);
+}
+
+/**
+ * Add a new card to EEPROM
+ */
+boolean doAddCard(String newCard) {
+    if (activeCards >= MAX_CARDS) {
+        Serial.println("Card storage full");
+        return false;
+    }
+    
+    // Check if card already exists
+    for (int i = 0; i < activeCards; i++) {
+        if (card[i] == newCard) {
+            Serial.println("Card already exists");
+            return false;
+        }
+    }
+    
+    // Add new card
+    card[activeCards] = newCard;
+    doWriteCardToEEPROM(activeCards, newCard);
+    activeCards++;
+    EEPROM.update(ACTIVE_CARDS_ADDR, activeCards);
+    
+    Serial.print("Added card: ");
+    Serial.println(newCard);
+    return true;
+}
+
+/**
+ * Delete a card from EEPROM
  */
 boolean doDeleteCard(String cardToDelete) {
     bool isDeleted = false;
     
-    // Find and delete the card
-    for (int i = 0; i < CARD_COUNT; i++) {
+    for (int i = 0; i < activeCards; i++) {
         if (card[i] == cardToDelete) {
-            // Found the card, now shift remaining cards left
-            for (int j = i; j < CARD_COUNT - 1; j++) {
+            // Shift remaining cards
+            for (int j = i; j < activeCards - 1; j++) {
                 card[j] = card[j + 1];
+                doWriteCardToEEPROM(j, card[j]);
             }
-            card[CARD_COUNT - 1] = ""; // Clear last position
+            activeCards--;
+            EEPROM.update(ACTIVE_CARDS_ADDR, activeCards);
+            
             isDeleted = true;
             Serial.print("Deleted card: ");
             Serial.println(cardToDelete);
             break;
         }
     }
-
+    
     if (!isDeleted) {
         Serial.println("Card not found");
     }
@@ -226,21 +320,60 @@ boolean doDeleteCard(String cardToDelete) {
     return isDeleted;
 }
 
+/**
+ * Handle serial commands for card management
+ */
+ bool isEmergencyMode = false;
 void doCheckSerialCommands() {
     if (Serial.available() > 0) {
         String command = Serial.readStringUntil('\n');
         command.trim();
         
-        // Check if it's a delete command
-        if (command.startsWith("DELETE:")) {
-            String cardID = command.substring(7); // Get the card ID after "DELETE:"
+        if (command.startsWith("ADD:")) {
+            String cardID = command.substring(4);
+            cardID.trim();
+            doAddCard(cardID);
+        }
+        else if (command.startsWith("DELETE:")) {
+            String cardID = command.substring(7);
             cardID.trim();
             doDeleteCard(cardID);
         }
-        // You can add more commands here
+        else if (command == "LIST") {
+            Serial.print("Active cards: ");
+            Serial.println(activeCards);
+            for (int i = 0; i < activeCards; i++) {
+                Serial.print(i);
+                Serial.print(": ");
+                Serial.println(card[i]);
+            }
+        }
+        if (command == "EMERGENCY") {
+            isEmergencyMode = true;
+            // Open gate
+            entranceServo.write(SERVO_OPEN_ANGLE);
+            
+            // Update display
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("TRƯỜNG HỢP KHẨN CẤP");
+            lcd.setCursor(0, 0);
+            lcd.print("NGUY HIỂM");
+            
+            Serial.println("EMERGENCY MODE ACTIVATED");
+            Serial.println("All gates opened");
+        }
+        else if (command == "RESET") {
+            isEmergencyMode = false;
+            // Close gate
+            entranceServo.write(SERVO_CLOSE_ANGLE);
+            
+            lcd.clear();
+            Serial.println("Emergency mode deactivated");
+            Serial.println("System returning to normal operation");
+        }
     }
 }
-
 
 // DO CODE
 void loop() {
@@ -248,34 +381,30 @@ void loop() {
         lastCheck = millis(); 
         doReadSensor();  // Update sensor status
 
-        // Update empty slot on the display
-        static int lastSlot = -1;
+        if (!isEmergencyMode) {
+            // Update empty slot on the display
+            static int lastSlot = -1;
 
-        // Update the display based on the number of available slots
-        if ((slot != lastSlot) && (slot > 0)) {
-            lcd.setCursor(0, 0);
-            lcd.print("   Số chỗ trống: ");
-            lcd.print(slot);
-            lcd.print("  ");
-            lastSlot = slot;
+            // Update the display based on the number of available slots
+            if (slot != lastSlot) {
+                lcd.setCursor(0, 0);
+                lcd.print("   Số chỗ trống: ");
+                lcd.print(slot);
+                lcd.print("  ");
+                lastSlot = slot;
+            }
+
+            // Update slot status on the display
+            doUpdateLCD(1, s1, 0, 1);
+            doUpdateLCD(2, s2, 10, 1);
+            doUpdateLCD(3, s3, 0, 2);
+            doUpdateLCD(4, s4, 10, 2);
+            doUpdateLCD(5, s5, 0, 3);
+            doUpdateLCD(6, s6, 10, 3);
+
+            doReadCard();
+            doCheckGateStatus();
         }
-
-        if ((slot != lastSlot) && (slot == 0))  {
-            lcd.setCursor(0, 0);
-            lcd.print("Bãi xe đã đầy");
-            lastSlot = slot;
-        }
-
-        // Update slot status on the display
-        doUpdateLCD(1, s1, 0, 1);
-        doUpdateLCD(2, s2, 10, 1);
-        doUpdateLCD(3, s3, 0, 2);
-        doUpdateLCD(4, s4, 10, 2);
-        doUpdateLCD(5, s5, 0, 3);
-        doUpdateLCD(6, s6, 10, 3);
-
-        doReadCard();
-        doCheckGateStatus();
         doCheckSerialCommands(); // Add this line
     }
 }
