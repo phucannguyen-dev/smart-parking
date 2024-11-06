@@ -15,8 +15,11 @@ Functions: doSomething
 #include <SPI.h>
 #include <MFRC522.h>
 #include <EEPROM.h>
+#include <SoftwareSerial.h>
 
 // Declare
+#define RX_PIN 10
+#define TX_PIN 11
 Servo entranceServo; // Control entrance gate
 const int LCD_COLS = 20;
 const int LCD_ROWS = 4;
@@ -42,6 +45,9 @@ const int ACTIVE_CARDS_ADDR = CARDS_START_ADDR + (MAX_CARDS * CARD_LENGTH);  // 
 int activeCards = 0;  // Declare this globally
 
 LCDI2C_Vietnamese lcd(0x27, LCD_COLS, LCD_ROWS); // LCD display
+
+// Init connection to ESP32
+SoftwareSerial espSerial(RX_PIN, TX_PIN);
 
 // Sensors
 #define IR_CAR1 30
@@ -101,6 +107,7 @@ void setup() {
     pinMode(IR_CAR6, INPUT);
 
     Serial.begin(SERIAL_BAUD); // Begin Serial Monitor
+    espSerial.begin(115200);
     doInitializeEEPROM();  // Initialize EEPROM
     SPI.begin();         // Init SPI bus
     mfrc522.PCD_Init();  // Init MFRC522
@@ -358,7 +365,7 @@ void doCheckSerialCommands() {
             lcd.setCursor(0, 0);
             lcd.print("TRƯỜNG HỢP KHẨN CẤP");
             lcd.setCursor(0, 0);
-            lcd.print("NGUY HIỂM");
+            lcd.print("NGUY HIỂM!");
             
             Serial.println("EMERGENCY MODE ACTIVATED");
             Serial.println("All gates opened");
